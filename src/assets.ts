@@ -15,15 +15,15 @@ export function assetUrl(relativePath: string): string {
 }
 
 export const IMG = {
-  banner: assetUrl('images/tile_trails_banner.png'),
+  banner: assetUrl('Images/tile_trails_banner.png'),
   worldBackgrounds: [
-    assetUrl('images/bg_meadow.jpg'),
-    assetUrl('images/bg_coastal.jpg'),
-    assetUrl('images/bg_candy.jpg'),
-    assetUrl('images/bg_mystic.jpg'),
-    assetUrl('images/bg_cloud.jpg'),
-    assetUrl('images/bg_dino.jpg'),
-    assetUrl('images/bg_space.jpg'),
+    assetUrl('Images/bg_meadow.jpg'),
+    assetUrl('Images/bg_coastal.jpg'),
+    assetUrl('Images/bg_candy.jpg'),
+    assetUrl('Images/bg_mystic.jpg'),
+    assetUrl('Images/bg_cloud.jpg'),
+    assetUrl('Images/bg_dino.jpg'),
+    assetUrl('Images/bg_space.jpg'),
   ],
 };
 

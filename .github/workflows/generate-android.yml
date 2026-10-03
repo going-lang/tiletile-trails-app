@@ -52,7 +52,12 @@ jobs:
           mkdir -p assets
           cp app-icon.png assets/icon-only.png
 
-          npx capacitor-assets generate --android
+          npx capacitor-assets generate --android \
+            --iconBackgroundColor '#1a1a2e' \
+            --iconBackgroundColorDark '#1a1a2e'
+
+          echo "--- Generated icons ---"
+          ls -la android/app/src/main/res/mipmap-*/
 
       - name: Configure Appodeal
         env:

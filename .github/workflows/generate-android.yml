@@ -52,12 +52,30 @@ jobs:
           mkdir -p assets
           cp app-icon.png assets/icon-only.png
 
+          # Launch (splash) screen: dark background with the icon centered
+          python3 -m pip install --quiet pillow
+          python3 - <<'PY'
+          from PIL import Image
+
+          icon = Image.open("app-icon.png").convert("RGBA").resize((800, 800), Image.LANCZOS)
+          canvas = Image.new("RGBA", (2732, 2732), (26, 26, 46, 255))
+          offset = (2732 - 800) // 2
+          canvas.alpha_composite(icon, (offset, offset))
+          canvas.convert("RGB").save("assets/splash.png")
+          canvas.convert("RGB").save("assets/splash-dark.png")
+          print("Splash images created")
+          PY
+
           npx capacitor-assets generate --android \
             --iconBackgroundColor '#1a1a2e' \
-            --iconBackgroundColorDark '#1a1a2e'
+            --iconBackgroundColorDark '#1a1a2e' \
+            --splashBackgroundColor '#1a1a2e' \
+            --splashBackgroundColorDark '#1a1a2e'
 
           echo "--- Generated icons ---"
           ls -la android/app/src/main/res/mipmap-*/
+          echo "--- Generated splash screens ---"
+          ls -la android/app/src/main/res/drawable*/splash*
 
       - name: Apply adaptive icon
         run: |

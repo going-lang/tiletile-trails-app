@@ -123,7 +123,18 @@ jobs:
         working-directory: android
         run: |
           chmod +x gradlew
-          ./gradlew assembleDebug
+
+          # More memory for Gradle: the many ad SDKs make dexing heavy
+          # (later duplicate keys override earlier ones in gradle.properties)
+          echo "org.gradle.jvmargs=-Xmx4g -XX:MaxMetaspaceSize=1g -Dfile.encoding=UTF-8" >> gradle.properties
+
+          set -o pipefail
+          ./gradlew assembleDebug --console=plain 2>&1 | tee ../build.log || {
+            echo ""
+            echo "=========== BUILD ERROR SUMMARY ==========="
+            grep -n -B2 -A25 -E "What went wrong|error:|Execution failed|OutOfMemory|Java heap space|daemon disappeared" ../build.log | tail -80
+            exit 1
+          }
 
       - name: Upload APK
         uses: actions/upload-artifact@v4

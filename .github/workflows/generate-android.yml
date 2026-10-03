@@ -14,7 +14,6 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-
       - name: Checkout
         uses: actions/checkout@v4
 
@@ -66,259 +65,108 @@ jobs:
 
           python3 <<'PY'
           from pathlib import Path
-          import os
+          import re
 
-          # --------------------------------------------------
-          # SETTINGS.GRADLE
-          # --------------------------------------------------
+          # ---------------------------------------------------------
+          # 1. Configure android/settings.gradle
+          # ---------------------------------------------------------
 
           settings = Path("android/settings.gradle")
 
           if not settings.exists():
-              settings = Path("android/settings.gradle.kts")
-
-          if not settings.exists():
-              raise SystemExit(
-                  "ERROR: Android settings.gradle was not found"
-              )
+              raise SystemExit("ERROR: android/settings.gradle was not generated")
 
           text = settings.read_text()
 
-          repo = (
-              'maven { '
-              'url = uri("https://artifactory.appodeal.com/appodeal") '
-              '}'
+          appodeal_repo = 'maven { url = uri("https://artifactory.appodeal.com/appodeal") }'
+
+          # Remove any previous Appodeal repository lines.
+          text = re.sub(
+              r'^\s*maven\s*\{\s*url\s*=\s*uri["\']https://artifactory\.appodeal\.com/appodeal["\']\s*\}\s*\n?',
+              '',
+              text,
+              flags=re.MULTILINE
           )
 
-          if "artifactory.appodeal.com/appodeal" not in text:
-
-              if "dependencyResolutionManagement {" in text:
-
-                  marker = "repositories {"
-
-                  position = text.find(
-                      "dependencyResolutionManagement {"
-                  )
-
-                  repo_position = text.find(
-                      marker,
-                      position
-                  )
-
-                  if repo_position != -1:
-
-                      insert_position = (
-                          repo_position + len(marker)
-                      )
-
-                      text = (
-                          text[:insert_position]
-                          + "\n        "
-                          + repo
-                          + text[insert_position:]
-                      )
-
-                  else:
-
-                      start = (
-                          position
-                          + len("dependencyResolutionManagement {")
-                      )
-
-                      text = (
-                          text[:start]
-                          + "\n    repositories {\n"
-                          + "        "
-                          + repo
-                          + "\n    }"
-                          + text[start:]
-                      )
-
-              else:
-
-                  text += (
-                      "\n\n"
-                      "dependencyResolutionManagement {\n"
-                      "    repositories {\n"
-                      "        "
-                      + repo
-                      + "\n"
-                      "    }\n"
-                      "}\n"
-                  )
-
-              settings.write_text(text)
-
-          print("Appodeal Maven repository configured.")
-
-          # --------------------------------------------------
-          # APP BUILD.GRADLE
-          # --------------------------------------------------
-
-          app_gradle = Path(
-              "android/app/build.gradle"
+          # Locate dependencyResolutionManagement.
+          drm_match = re.search(
+              r'dependencyResolutionManagement\s*\{',
+              text
           )
 
-          if not app_gradle.exists():
-              app_gradle = Path(
-                  "android/app/build.gradle.kts"
+          if drm_match:
+              drm_start = drm_match.start()
+
+              # Find the repositories block after dependencyResolutionManagement.
+              repos_match = re.search(
+                  r'\brepositories\s*\{',
+                  text[drm_start:]
               )
 
-          if not app_gradle.exists():
-              raise SystemExit(
-                  "ERROR: Android app Gradle file was not found"
-              )
-
-          text = app_gradle.read_text()
-
-          dependencies = """
-              implementation("com.appodeal.ads.sdk:core:4.4.0")
-              implementation("com.appodeal.ads.sdk.adapters:amazon:12.0.0.0")
-              implementation("com.appodeal.ads.sdk.adapters:applovin:13.6.3.0")
-              implementation("com.appodeal.ads.sdk.adapters:applovin_max:13.6.3.1")
-              implementation("com.appodeal.ads.sdk.adapters:bidmachine:3.7.1.0")
-              implementation("com.appodeal.ads.sdk.adapters:bidon:0.14.0.0")
-              implementation("com.appodeal.ads.sdk.adapters:bigo_ads:5.9.0.0")
-              implementation("com.appodeal.ads.sdk.adapters:chartboost:9.10.2.0")
-              implementation("com.appodeal.ads.sdk.adapters:dt_exchange:8.4.6.0")
-              implementation("com.appodeal.ads.sdk.adapters:iab:1.8.1.1")
-              implementation("com.appodeal.ads.sdk.adapters:inmobi:11.3.0.0")
-              implementation("com.appodeal.ads.sdk.adapters:ironsource:9.4.4.0")
-              implementation("com.appodeal.ads.sdk.adapters:level_play:9.4.4.0")
-              implementation("com.appodeal.ads.sdk.adapters:mintegral:17.1.61.0")
-              implementation("com.appodeal.ads.sdk.adapters:mobilefuse:1.11.0.0")
-              implementation("com.appodeal.ads.sdk.adapters:moloco:4.3.1.0")
-              implementation("com.appodeal.ads.sdk.adapters:my_target:5.47.1.0")
-              implementation("com.appodeal.ads.sdk.adapters:ogury:6.2.0.0")
-              implementation("com.appodeal.ads.sdk.adapters:pubmatic:4.10.0.0")
-              implementation("com.appodeal.ads.sdk.adapters:smaato:22.7.2.0")
-              implementation("com.appodeal.ads.sdk.adapters:startio:5.2.4.0")
-              implementation("com.appodeal.ads.sdk.adapters:taurusx:1.12.2.0")
-              implementation("com.appodeal.ads.sdk.adapters:unity_ads:4.17.0.0")
-              implementation("com.appodeal.ads.sdk.adapters:verve:3.7.1.0")
-              implementation("com.appodeal.ads.sdk.adapters:vungle:7.7.4.0")
-              implementation("com.appodeal.ads.sdk.adapters:yandex:7.17.0.0")
-          """
-
-          if "com.appodeal.ads.sdk:core:4.4.0" not in text:
-
-              if "dependencies {" not in text:
+              if not repos_match:
                   raise SystemExit(
-                      "ERROR: dependencies block not found"
+                      "ERROR: Could not find repositories block inside "
+                      "dependencyResolutionManagement"
                   )
 
-              text = text.replace(
-                  "dependencies {",
-                  "dependencies {\n" + dependencies,
-                  1
+              repos_start = drm_start + repos_match.end()
+
+              text = (
+                  text[:repos_start]
+                  + "\n        "
+                  + appodeal_repo
+                  + "\n"
+                  + text[repos_start:]
               )
 
-              app_gradle.write_text(text)
+          else:
+              # Add a complete dependencyResolutionManagement block.
+              block = """
+          dependencyResolutionManagement {
+              repositoriesMode.set(RepositoriesMode.PREFER_SETTINGS)
+              repositories {
+                  google()
+                  mavenCentral()
+                  maven { url = uri("https://artifactory.appodeal.com/appodeal") }
+              }
+          }
 
-          print("Appodeal dependencies configured.")
-
-          # --------------------------------------------------
-          # NETWORK SECURITY
-          # --------------------------------------------------
-
-          xml_dir = Path(
-              "android/app/src/main/res/xml"
-          )
-
-          xml_dir.mkdir(
-              parents=True,
-              exist_ok=True
-          )
-
-          network_file = (
-              xml_dir / "network_security_config.xml"
-          )
-
-          network_file.write_text(
-              """<?xml version="1.0" encoding="utf-8"?>
-          <network-security-config>
-              <base-config cleartextTrafficPermitted="true">
-                  <trust-anchors>
-                      <certificates src="system" />
-                  </trust-anchors>
-              </base-config>
-          </network-security-config>
           """
-          )
 
-          # --------------------------------------------------
-          # ANDROID MANIFEST
-          # --------------------------------------------------
+              text = block + text
 
-          manifest = Path(
-              "android/app/src/main/AndroidManifest.xml"
-          )
+          settings.write_text(text)
 
-          if not manifest.exists():
-              raise SystemExit(
-                  "ERROR: AndroidManifest.xml not found"
-              )
+          print("Configured Appodeal Maven repository in android/settings.gradle")
 
-          manifest_text = manifest.read_text()
+          # ---------------------------------------------------------
+          # 2. Configure android/app/build.gradle
+          # ---------------------------------------------------------
 
-          if "android:networkSecurityConfig=" not in manifest_text:
+          app_gradle = Path("android/app/build.gradle")
 
-              manifest_text = manifest_text.replace(
-                  "<application",
-                  '<application android:networkSecurityConfig="@xml/network_security_config"',
-                  1
-              )
+          if not app_gradle.exists():
+              raise SystemExit("ERROR: android/app/build.gradle was not generated")
 
-              manifest.write_text(manifest_text)
+          app_text = app_gradle.read_text()
 
-          # --------------------------------------------------
-          # MAIN ACTIVITY
-          # --------------------------------------------------
+          dependencies = [
+              'implementation("com.appodeal.ads.sdk:core:4.4.0")',
 
-          activity = Path(
-              "android/app/src/main/java/com/tiletrails/game/MainActivity.java"
-          )
-
-          activity.parent.mkdir(
-              parents=True,
-              exist_ok=True
-          )
-
-          key = os.environ["APPODEAL_APP_KEY"]
-
-          java = """package com.tiletrails.game;
-
-          import android.os.Bundle;
-
-          import androidx.annotation.Nullable;
-
-          import com.appodeal.ads.Appodeal;
-          import com.appodeal.ads.initialization.ApdInitializationCallback;
-          import com.appodeal.ads.initialization.ApdInitializationError;
-          import com.getcapacitor.BridgeActivity;
-
-          import java.util.List;
-
-          public class MainActivity extends BridgeActivity {
-
-              @Override
-              protected void onCreate(
-                      @Nullable Bundle savedInstanceState) {
-
-                  super.onCreate(savedInstanceState);
-
-                  int adTypes =
-                          Appodeal.BANNER |
-                          Appodeal.INTERSTITIAL;
-
-                  Appodeal.initialize(
-                          this,
-                          "%s",
-                          adTypes,
-                          new ApdInitializationCallback() {
-
-                              @Override
-                              public void onInitializationFinished(
+              # Appodeal adapters
+              'implementation("com.appodeal.ads.sdk.adapters:amazon:12.0.0.0")',
+              'implementation("com.appodeal.ads.sdk.adapters:applovin:13.6.3.0")',
+              'implementation("com.appodeal.ads.sdk.adapters:applovin_max:13.6.3.1")',
+              'implementation("com.appodeal.ads.sdk.adapters:bidmachine:3.7.1.0")',
+              'implementation("com.appodeal.ads.sdk.adapters:bidon:0.14.0.0")',
+              'implementation("com.appodeal.ads.sdk.adapters:bigo_ads:5.9.0.0")',
+              'implementation("com.appodeal.ads.sdk.adapters:chartboost:9.10.2.0")',
+              'implementation("com.appodeal.ads.sdk.adapters:dt_exchange:8.4.6.0")',
+              'implementation("com.appodeal.ads.sdk.adapters:iab:1.8.1.1")',
+              'implementation("com.appodeal.ads.sdk.adapters:inmobi:11.3.0.0")',
+              'implementation("com.appodeal.ads.sdk.adapters:ironsource:9.4.4.0")',
+              'implementation("com.appodeal.ads.sdk.adapters:level_play:9.4.4.0")',
+              'implementation("com.appode                             public void onInitializationFinished(
                                       @Nullable List<ApdInitializationError> errors) {
 
                                   Appodeal.show(

@@ -63,127 +63,7 @@ jobs:
             exit 1
           fi
 
-          python3 <<'PY'
-          from pathlib import Path
-          import re
-
-          # ---------------------------------------------------------
-          # 1. Configure android/settings.gradle
-          # ---------------------------------------------------------
-
-          settings = Path("android/settings.gradle")
-
-          if not settings.exists():
-              raise SystemExit("ERROR: android/settings.gradle was not generated")
-
-          text = settings.read_text()
-
-          appodeal_repo = 'maven { url = uri("https://artifactory.appodeal.com/appodeal") }'
-
-          # Remove any previous Appodeal repository lines.
-          text = re.sub(
-              r'^\s*maven\s*\{\s*url\s*=\s*uri["\']https://artifactory\.appodeal\.com/appodeal["\']\s*\}\s*\n?',
-              '',
-              text,
-              flags=re.MULTILINE
-          )
-
-          # Locate dependencyResolutionManagement.
-          drm_match = re.search(
-              r'dependencyResolutionManagement\s*\{',
-              text
-          )
-
-          if drm_match:
-              drm_start = drm_match.start()
-
-              # Find the repositories block after dependencyResolutionManagement.
-              repos_match = re.search(
-                  r'\brepositories\s*\{',
-                  text[drm_start:]
-              )
-
-              if not repos_match:
-                  raise SystemExit(
-                      "ERROR: Could not find repositories block inside "
-                      "dependencyResolutionManagement"
-                  )
-
-              repos_start = drm_start + repos_match.end()
-
-              text = (
-                  text[:repos_start]
-                  + "\n        "
-                  + appodeal_repo
-                  + "\n"
-                  + text[repos_start:]
-              )
-
-          else:
-              # Add a complete dependencyResolutionManagement block.
-              block = """
-          dependencyResolutionManagement {
-              repositoriesMode.set(RepositoriesMode.PREFER_SETTINGS)
-              repositories {
-                  google()
-                  mavenCentral()
-                  maven { url = uri("https://artifactory.appodeal.com/appodeal") }
-              }
-          }
-
-          """
-
-              text = block + text
-
-          settings.write_text(text)
-
-          print("Configured Appodeal Maven repository in android/settings.gradle")
-
-          # ---------------------------------------------------------
-          # 2. Configure android/app/build.gradle
-          # ---------------------------------------------------------
-
-          app_gradle = Path("android/app/build.gradle")
-
-          if not app_gradle.exists():
-              raise SystemExit("ERROR: android/app/build.gradle was not generated")
-
-          app_text = app_gradle.read_text()
-
-          dependencies = [
-              'implementation("com.appodeal.ads.sdk:core:4.4.0")',
-
-              # Appodeal adapters
-              'implementation("com.appodeal.ads.sdk.adapters:amazon:12.0.0.0")',
-              'implementation("com.appodeal.ads.sdk.adapters:applovin:13.6.3.0")',
-              'implementation("com.appodeal.ads.sdk.adapters:applovin_max:13.6.3.1")',
-              'implementation("com.appodeal.ads.sdk.adapters:bidmachine:3.7.1.0")',
-              'implementation("com.appodeal.ads.sdk.adapters:bidon:0.14.0.0")',
-              'implementation("com.appodeal.ads.sdk.adapters:bigo_ads:5.9.0.0")',
-              'implementation("com.appodeal.ads.sdk.adapters:chartboost:9.10.2.0")',
-              'implementation("com.appodeal.ads.sdk.adapters:dt_exchange:8.4.6.0")',
-              'implementation("com.appodeal.ads.sdk.adapters:iab:1.8.1.1")',
-              'implementation("com.appodeal.ads.sdk.adapters:inmobi:11.3.0.0")',
-              'implementation("com.appodeal.ads.sdk.adapters:ironsource:9.4.4.0")',
-              'implementation("com.appodeal.ads.sdk.adapters:level_play:9.4.4.0")',
-              'implementation("com.appode                             public void onInitializationFinished(
-                                      @Nullable List<ApdInitializationError> errors) {
-
-                                  Appodeal.show(
-                                          MainActivity.this,
-                                          Appodeal.BANNER
-                                  );
-                              }
-                          }
-                  );
-              }
-          }
-          """ % key
-
-          activity.write_text(java)
-
-          print("Appodeal configuration completed.")
-          PY
+          python3 scripts/configure_appodeal.py
 
       - name: Build APK
         working-directory: android
@@ -206,15 +86,10 @@ jobs:
           from pathlib import Path
           import os
 
-          key = os.environ.get(
-              "APPODEAL_APP_KEY",
-              ""
-          )
+          key = os.environ.get("APPODEAL_APP_KEY", "")
 
           if key:
-
               for file in Path("android").rglob("*"):
-
                   if not file.is_file():
                       continue
 
@@ -224,13 +99,7 @@ jobs:
                       continue
 
                   if key in text:
-
-                      file.write_text(
-                          text.replace(
-                              key,
-                              "APPODEAL_APP_KEY"
-                          )
-                      )
+                      file.write_text(text.replace(key, "APPODEAL_APP_KEY"))
 
           print("Secret removed from Android files.")
           PY

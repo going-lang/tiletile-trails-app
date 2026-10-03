@@ -58,8 +58,8 @@ import android.os.Bundle;
 import androidx.annotation.Nullable;
 
 import com.appodeal.ads.Appodeal;
-import com.appodeal.ads.initialization.ApdInitializationCallback;
-import com.appodeal.ads.initialization.ApdInitializationError;
+import com.appodeal.ads.initializing.ApdInitializationCallback;
+import com.appodeal.ads.initializing.ApdInitializationError;
 import com.getcapacitor.BridgeActivity;
 
 import java.util.List;
@@ -80,7 +80,7 @@ public class MainActivity extends BridgeActivity {
                     @Override
                     public void onInitializationFinished(
                             @Nullable List<ApdInitializationError> errors) {
-                        Appodeal.show(MainActivity.this, Appodeal.BANNER);
+                        Appodeal.show(MainActivity.this, Appodeal.BANNER_BOTTOM);
                     }
                 }
         );

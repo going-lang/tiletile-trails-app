@@ -59,6 +59,37 @@ jobs:
           echo "--- Generated icons ---"
           ls -la android/app/src/main/res/mipmap-*/
 
+      - name: Apply adaptive icon
+        run: |
+          RES=android/app/src/main/res
+
+          # Remove the default Capacitor icon layers that override our icon
+          rm -f "$RES/drawable-v24/ic_launcher_foreground.xml"
+          rm -f "$RES/drawable/ic_launcher_background.xml"
+
+          # Background color used behind the icon on Android 8+
+          mkdir -p "$RES/values"
+          cat > "$RES/values/ic_launcher_background.xml" <<'XML'
+          <?xml version="1.0" encoding="utf-8"?>
+          <resources>
+              <color name="ic_launcher_background">#1a1a2e</color>
+          </resources>
+          XML
+
+          # Point the adaptive icons at the generated PNGs
+          for NAME in ic_launcher ic_launcher_round; do
+            cat > "$RES/mipmap-anydpi-v26/$NAME.xml" <<'XML'
+          <?xml version="1.0" encoding="utf-8"?>
+          <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+              <background android:drawable="@color/ic_launcher_background"/>
+              <foreground android:drawable="@mipmap/ic_launcher_foreground"/>
+          </adaptive-icon>
+          XML
+          done
+
+          echo "--- Adaptive icon XML ---"
+          cat "$RES/mipmap-anydpi-v26/ic_launcher.xml"
+
       - name: Configure Appodeal
         env:
           APPODEAL_APP_KEY: ${{ secrets.APPODEAL_APP_KEY }}

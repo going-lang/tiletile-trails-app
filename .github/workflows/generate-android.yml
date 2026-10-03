@@ -1,74 +1,3 @@
-name: Generate Android Project and Build APK
-
-on:
-  workflow_dispatch:
-  push:
-    branches:
-      - main
-    paths:
-      - "package.json"
-      - "package-lock.json"
-      - "capacitor.config.ts"
-      - "vite.config.ts"
-      - "index.html"
-      - "src/**"
-      - "public/**"
-      - "app-icon.png"
-      - ".github/workflows/generate-android.yml"
-
-permissions:
-  contents: write
-
-jobs:
-  build-android:
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Set up Node.js 22
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-
-      - name: Set up Java 21
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: 21
-
-      - name: Install dependencies
-        run: npm install
-
-      - name: Build web game
-        run: npm run build
-
-      - name: Create Capacitor Android project
-        run: |
-          set -e
-          rm -rf android
-          npx cap add android
-          npx cap sync android
-
-      - name: Generate Tile Trails Android icon
-        run: |
-          set -e
-
-          if [ ! -f "app-icon.png" ]; then
-            echo "ERROR: app-icon.png was not found."
-            exit 1
-          fi
-
-          npm install --no-save @capacitor/assets
-
-          mkdir -p assets
-          cp app-icon.png assets/icon-only.png
-
-          npx capacitor-assets generate --android
-
       - name: Configure Appodeal
         env:
           APPODEAL_APP_KEY: ${{ secrets.APPODEAL_APP_KEY }}
@@ -96,9 +25,9 @@ jobs:
           )
 
           if settings is None:
-              raise SystemExit(
-                  "ERROR: Android settings.gradle file was not generated."
-              )
+              raise SystemExit("ERROR: Android settings.gradle file was not generated.")
+
+          print("Using:", settings)
 
           text = settings.read_text()
 
@@ -112,11 +41,7 @@ jobs:
                       1
                   )
               else:
-                  text += (
-                      "\n\nrepositories {\n"
-                      "    " + repo + "\n"
-                      "}\n"
-                  )
+                  text += "\n\nrepositories {\n    " + repo + "\n}\n"
 
               settings.write_text(text)
 
@@ -132,9 +57,9 @@ jobs:
           )
 
           if app_gradle is None:
-              raise SystemExit(
-                  "ERROR: Android app Gradle file was not generated."
-              )
+              raise SystemExit("ERROR: Android app Gradle file was not generated.")
+
+          print("Using:", app_gradle)
 
           text = app_gradle.read_text()
 
@@ -168,26 +93,18 @@ jobs:
           """
 
           if "com.appodeal.ads.sdk:core:4.4.0" not in text:
-              if "dependencies {" not in text:
-                  raise SystemExit(
-                      "ERROR: Could not find dependencies block."
-                  )
-
               text = text.replace(
                   "dependencies {",
                   "dependencies {\n" + dependencies,
                   1
               )
-
               app_gradle.write_text(text)
 
-          # Network security configuration
+          # Network security
           res_xml = Path("android/app/src/main/res/xml")
           res_xml.mkdir(parents=True, exist_ok=True)
 
-          network_config = res_xml / "network_security_config.xml"
-
-          network_config.write_text(
+          (res_xml / "network_security_config.xml").write_text(
               """<?xml version="1.0" encoding="utf-8"?>
           <network-security-config>
               <base-config cleartextTrafficPermitted="true">
@@ -199,15 +116,11 @@ jobs:
           """
           )
 
-          # AndroidManifest.xml
-          manifest = Path(
-              "android/app/src/main/AndroidManifest.xml"
-          )
+          # Android manifest
+          manifest = Path("android/app/src/main/AndroidManifest.xml")
 
           if not manifest.exists():
-              raise SystemExit(
-                  "ERROR: AndroidManifest.xml was not generated."
-              )
+              raise SystemExit("ERROR: AndroidManifest.xml was not generated.")
 
           manifest_text = manifest.read_text()
 
@@ -217,10 +130,9 @@ jobs:
                   '<application android:networkSecurityConfig="@xml/network_security_config"',
                   1
               )
-
               manifest.write_text(manifest_text)
 
-          # MainActivity.java
+          # MainActivity
           activity = Path(
               "android/app/src/main/java/com/tiletrails/game/MainActivity.java"
           )
@@ -232,7 +144,6 @@ jobs:
           java_code = """package com.tiletrails.game;
 
           import android.os.Bundle;
-
           import androidx.annotation.Nullable;
 
           import com.appodeal.ads.Appodeal;
@@ -277,18 +188,3 @@ jobs:
 
           print("Appodeal configuration completed successfully.")
           PY
-
-      - name: Build debug APK
-        working-directory: android
-        run: |
-          chmod +x gradlew
-          ./gradlew assembleDebug
-
-      - name: Upload APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: tile-trails-debug-apk
-          path: android/app/build/outputs/apk/debug/app-debug.apk
-          if-no-files-found: error
-
-      - name: Remove

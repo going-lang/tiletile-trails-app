@@ -1,10 +1,10 @@
 name: Build Tile Trails APK
 
 on:
+  workflow_dispatch:
   push:
     branches:
       - main
-  workflow_dispatch:
 
 permissions:
   contents: write
@@ -68,69 +68,110 @@ jobs:
           from pathlib import Path
           import os
 
-          # Find settings.gradle
-          settings = None
+          # --------------------------------------------------
+          # SETTINGS.GRADLE
+          # --------------------------------------------------
 
-          for file in [
-              Path("android/settings.gradle"),
-              Path("android/settings.gradle.kts")
-          ]:
-              if file.exists():
-                  settings = file
-                  break
+          settings = Path("android/settings.gradle")
 
-          if settings is None:
+          if not settings.exists():
+              settings = Path("android/settings.gradle.kts")
+
+          if not settings.exists():
               raise SystemExit(
-                  "ERROR: No Android settings.gradle file found"
+                  "ERROR: Android settings.gradle was not found"
               )
-
-          print("Using:", settings)
 
           text = settings.read_text()
 
-          appodeal_repo = (
+          repo = (
               'maven { '
               'url = uri("https://artifactory.appodeal.com/appodeal") '
               '}'
           )
 
           if "artifactory.appodeal.com/appodeal" not in text:
-              if "repositories {" in text:
-                  text = text.replace(
-                      "repositories {",
-                      "repositories {\n        " + appodeal_repo,
-                      1
+
+              if "dependencyResolutionManagement {" in text:
+
+                  marker = "repositories {"
+
+                  position = text.find(
+                      "dependencyResolutionManagement {"
                   )
+
+                  repo_position = text.find(
+                      marker,
+                      position
+                  )
+
+                  if repo_position != -1:
+
+                      insert_position = (
+                          repo_position + len(marker)
+                      )
+
+                      text = (
+                          text[:insert_position]
+                          + "\n        "
+                          + repo
+                          + text[insert_position:]
+                      )
+
+                  else:
+
+                      start = (
+                          position
+                          + len("dependencyResolutionManagement {")
+                      )
+
+                      text = (
+                          text[:start]
+                          + "\n    repositories {\n"
+                          + "        "
+                          + repo
+                          + "\n    }"
+                          + text[start:]
+                      )
+
               else:
+
                   text += (
-                      "\nrepositories {\n"
-                      "    " + appodeal_repo + "\n"
+                      "\n\n"
+                      "dependencyResolutionManagement {\n"
+                      "    repositories {\n"
+                      "        "
+                      + repo
+                      + "\n"
+                      "    }\n"
                       "}\n"
                   )
 
               settings.write_text(text)
 
-          # Find app Gradle file
-          app_gradle = None
+          print("Appodeal Maven repository configured.")
 
-          for file in [
-              Path("android/app/build.gradle"),
-              Path("android/app/build.gradle.kts")
-          ]:
-              if file.exists():
-                  app_gradle = file
-                  break
+          # --------------------------------------------------
+          # APP BUILD.GRADLE
+          # --------------------------------------------------
 
-          if app_gradle is None:
-              raise SystemExit(
-                  "ERROR: No Android app Gradle file found"
+          app_gradle = Path(
+              "android/app/build.gradle"
+          )
+
+          if not app_gradle.exists():
+              app_gradle = Path(
+                  "android/app/build.gradle.kts"
               )
 
-          print("Using:", app_gradle)
+          if not app_gradle.exists():
+              raise SystemExit(
+                  "ERROR: Android app Gradle file was not found"
+              )
 
           text = app_gradle.read_text()
 
-          appodeal = """
+          dependencies = """
               implementation("com.appodeal.ads.sdk:core:4.4.0")
               implementation("com.appodeal.ads.sdk.adapters:amazon:12.0.0.0")
               implementation("com.appodeal.ads.sdk.adapters:applovin:13.6.3.0")
@@ -160,6 +201,7 @@ jobs:
           """
 
           if "com.appodeal.ads.sdk:core:4.4.0" not in text:
+
               if "dependencies {" not in text:
                   raise SystemExit(
                       "ERROR: dependencies block not found"
@@ -167,13 +209,18 @@ jobs:
 
               text = text.replace(
                   "dependencies {",
-                  "dependencies {\n" + appodeal,
+                  "dependencies {\n" + dependencies,
                   1
               )
 
               app_gradle.write_text(text)
 
-          # Network security
+          print("Appodeal dependencies configured.")
+
+          # --------------------------------------------------
+          # NETWORK SECURITY
+          # --------------------------------------------------
+
           xml_dir = Path(
               "android/app/src/main/res/xml"
           )
@@ -199,7 +246,10 @@ jobs:
           """
           )
 
-          # Android manifest
+          # --------------------------------------------------
+          # ANDROID MANIFEST
+          # --------------------------------------------------
+
           manifest = Path(
               "android/app/src/main/AndroidManifest.xml"
           )
@@ -212,6 +262,7 @@ jobs:
           manifest_text = manifest.read_text()
 
           if "android:networkSecurityConfig=" not in manifest_text:
+
               manifest_text = manifest_text.replace(
                   "<application",
                   '<application android:networkSecurityConfig="@xml/network_security_config"',
@@ -220,7 +271,10 @@ jobs:
 
               manifest.write_text(manifest_text)
 
-          # MainActivity
+          # --------------------------------------------------
+          # MAIN ACTIVITY
+          # --------------------------------------------------
+
           activity = Path(
               "android/app/src/main/java/com/tiletrails/game/MainActivity.java"
           )
@@ -280,7 +334,7 @@ jobs:
 
           activity.write_text(java)
 
-          print("Appodeal configured successfully")
+          print("Appodeal configuration completed.")
           PY
 
       - name: Build APK
@@ -294,8 +348,9 @@ jobs:
         with:
           name: tile-trails-debug-apk
           path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
 
-      - name: Remove secret
+      - name: Remove Appodeal secret
         env:
           APPODEAL_APP_KEY: ${{ secrets.APPODEAL_APP_KEY }}
         run: |
@@ -303,25 +358,33 @@ jobs:
           from pathlib import Path
           import os
 
-          key = os.environ.get("APPODEAL_APP_KEY", "")
+          key = os.environ.get(
+              "APPODEAL_APP_KEY",
+              ""
+          )
 
           if key:
+
               for file in Path("android").rglob("*"):
+
                   if not file.is_file():
                       continue
 
                   try:
                       text = file.read_text()
-                  except:
+                  except Exception:
                       continue
 
                   if key in text:
+
                       file.write_text(
                           text.replace(
                               key,
                               "APPODEAL_APP_KEY"
                           )
                       )
+
+          print("Secret removed from Android files.")
           PY
 
       - name: Commit Android project
@@ -332,8 +395,8 @@ jobs:
           git add android
 
           if git diff --cached --quiet; then
-            echo "No Android changes to commit"
+            echo "No Android changes to commit."
           else
-            git commit -m "Build Android project with Appodeal"
+            git commit -m "Generate Android project with Appodeal"
             git push
           fi

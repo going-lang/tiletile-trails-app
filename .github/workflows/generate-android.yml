@@ -13,6 +13,7 @@ on:
       - "index.html"
       - "src/**"
       - "public/**"
+      - "app-icon.png"
       - ".github/workflows/generate-android.yml"
 
 permissions:
@@ -47,9 +48,251 @@ jobs:
 
       - name: Create Capacitor Android project
         run: |
+          set -e
           rm -rf android
           npx cap add android
           npx cap sync android
+
+      - name: Generate Tile Trails Android icon
+        run: |
+          set -e
+
+          if [ ! -f "app-icon.png" ]; then
+            echo "ERROR: app-icon.png was not found in the repository root."
+            exit 1
+          fi
+
+          npm install --no-save @capacitor/assets
+
+          mkdir -p assets
+          cp app-icon.png assets/icon-only.png
+
+          npx capacitor-assets generate --android
+
+          echo "Tile Trails Android icon generated successfully."
+
+      - name: Configure Appodeal
+        env:
+          APPODEAL_APP_KEY: ${{ secrets.APPODEAL_APP_KEY }}
+        run: |
+          set -e
+
+          if [ -z "$APPODEAL_APP_KEY" ]; then
+            echo "ERROR: APPODEAL_APP_KEY GitHub secret is missing."
+            exit 1
+          fi
+
+          python3 - <<'PY'
+          from pathlib import Path
+          import os
+
+          # ---------------------------------------------------------
+          # Appodeal Maven repository
+          # ---------------------------------------------------------
+
+          settings = Path("android/settings.gradle.kts")
+
+          if not settings.exists():
+              raise SystemExit(
+                  "android/settings.gradle.kts was not generated."
+              )
+
+          text = settings.read_text()
+
+          repo = 'maven { url = uri("https://artifactory.appodeal.com/appodeal") }'
+
+          if repo not in text:
+              marker = "repositories {"
+
+              if marker in text:
+                  text = text.replace(
+                      marker,
+                      marker + "\n        " + repo,
+                      1
+                  )
+              else:
+                  text += (
+                      "\n\n"
+                      "dependencyResolutionManagement {\n"
+                      "    repositories {\n"
+                      "        " + repo + "\n"
+                      "    }\n"
+                      "}\n"
+                  )
+
+              settings.write_text(text)
+
+          # ---------------------------------------------------------
+          # Appodeal SDK
+          # ---------------------------------------------------------
+
+          app_gradle = Path("android/app/build.gradle.kts")
+
+          if not app_gradle.exists():
+              raise SystemExit(
+                  "android/app/build.gradle.kts was not generated."
+              )
+
+          text = app_gradle.read_text()
+
+          dependencies = """
+              implementation("com.appodeal.ads.sdk:core:4.4.0")
+
+              implementation("com.appodeal.ads.sdk.adapters:amazon:12.0.0.0")
+              implementation("com.appodeal.ads.sdk.adapters:applovin:13.6.3.0")
+              implementation("com.appodeal.ads.sdk.adapters:applovin_max:13.6.3.1")
+              implementation("com.appodeal.ads.sdk.adapters:bidmachine:3.7.1.0")
+              implementation("com.appodeal.ads.sdk.adapters:bidon:0.14.0.0")
+              implementation("com.appodeal.ads.sdk.adapters:bigo_ads:5.9.0.0")
+              implementation("com.appodeal.ads.sdk.adapters:chartboost:9.10.2.0")
+              implementation("com.appodeal.ads.sdk.adapters:dt_exchange:8.4.6.0")
+              implementation("com.appodeal.ads.sdk.adapters:iab:1.8.1.1")
+              implementation("com.appodeal.ads.sdk.adapters:inmobi:11.3.0.0")
+              implementation("com.appodeal.ads.sdk.adapters:ironsource:9.4.4.0")
+              implementation("com.appodeal.ads.sdk.adapters:level_play:9.4.4.0")
+              implementation("com.appodeal.ads.sdk.adapters:mintegral:17.1.61.0")
+              implementation("com.appodeal.ads.sdk.adapters:mobilefuse:1.11.0.0")
+              implementation("com.appodeal.ads.sdk.adapters:moloco:4.3.1.0")
+              implementation("com.appodeal.ads.sdk.adapters:my_target:5.47.1.0")
+              implementation("com.appodeal.ads.sdk.adapters:ogury:6.2.0.0")
+              implementation("com.appodeal.ads.sdk.adapters:pubmatic:4.10.0.0")
+              implementation("com.appodeal.ads.sdk.adapters:smaato:22.7.2.0")
+              implementation("com.appodeal.ads.sdk.adapters:startio:5.2.4.0")
+              implementation("com.appodeal.ads.sdk.adapters:taurusx:1.12.2.0")
+              implementation("com.appodeal.ads.sdk.adapters:unity_ads:4.17.0.0")
+              implementation("com.appodeal.ads.sdk.adapters:verve:3.7.1.0")
+              implementation("com.appodeal.ads.sdk.adapters:vungle:7.7.4.0")
+              implementation("com.appodeal.ads.sdk.adapters:yandex:7.17.0.0")
+          """
+
+          if "com.appodeal.ads.sdk:core:4.4.0" not in text:
+              if "dependencies {" not in text:
+                  raise SystemExit(
+                      "Could not find dependencies block."
+                  )
+
+              text = text.replace(
+                  "dependencies {",
+                  "dependencies {\n" + dependencies,
+                  1
+              )
+
+              app_gradle.write_text(text)
+
+          # ---------------------------------------------------------
+          # Network security configuration
+          # ---------------------------------------------------------
+
+          res_xml = Path(
+              "android/app/src/main/res/xml"
+          )
+
+          res_xml.mkdir(
+              parents=True,
+              exist_ok=True
+          )
+
+          network_config = res_xml / "network_security_config.xml"
+
+          network_config.write_text(
+              """<?xml version="1.0" encoding="utf-8"?>
+          <network-security-config>
+              <base-config cleartextTrafficPermitted="true">
+                  <trust-anchors>
+                      <certificates src="system" />
+                  </trust-anchors>
+              </base-config>
+          </network-security-config>
+          """
+          )
+
+          # ---------------------------------------------------------
+          # AndroidManifest.xml
+          # ---------------------------------------------------------
+
+          manifest = Path(
+              "android/app/src/main/AndroidManifest.xml"
+          )
+
+          if not manifest.exists():
+              raise SystemExit(
+                  "AndroidManifest.xml was not generated."
+              )
+
+          manifest_text = manifest.read_text()
+
+          if "android:networkSecurityConfig=" not in manifest_text:
+              manifest_text = manifest_text.replace(
+                  "<application",
+                  '<application android:networkSecurityConfig="@xml/network_security_config"',
+                  1
+              )
+
+              manifest.write_text(manifest_text)
+
+          # ---------------------------------------------------------
+          # MainActivity.java
+          # ---------------------------------------------------------
+
+          activity = Path(
+              "android/app/src/main/java/com/tiletrails/game/MainActivity.java"
+          )
+
+          activity.parent.mkdir(
+              parents=True,
+              exist_ok=True
+          )
+
+          app_key = os.environ["APPODEAL_APP_KEY"]
+
+          java_code = """package com.tiletrails.game;
+
+          import android.os.Bundle;
+
+          import androidx.annotation.Nullable;
+
+          import com.appodeal.ads.Appodeal;
+          import com.appodeal.ads.initialization.ApdInitializationCallback;
+          import com.appodeal.ads.initialization.ApdInitializationError;
+          import com.getcapacitor.BridgeActivity;
+
+          import java.util.List;
+
+          public class MainActivity extends BridgeActivity {
+
+              @Override
+              protected void onCreate(@Nullable Bundle savedInstanceState) {
+                  super.onCreate(savedInstanceState);
+
+                  int adTypes =
+                          Appodeal.BANNER |
+                          Appodeal.INTERSTITIAL;
+
+                  Appodeal.initialize(
+                          this,
+                          "%s",
+                          adTypes,
+                          new ApdInitializationCallback() {
+
+                              @Override
+                              public void onInitializationFinished(
+                                      @Nullable List<ApdInitializationError> errors) {
+
+                                  Appodeal.show(
+                                          MainActivity.this,
+                                          Appodeal.BANNER
+                                  );
+                              }
+                          }
+                  );
+              }
+          }
+          """ % app_key
+
+          activity.write_text(java_code)
+
+          print("Appodeal configuration completed.")
+          PY
 
       - name: Build debug APK
         working-directory: android
@@ -64,6 +307,46 @@ jobs:
           path: android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
 
+      - name: Remove Appodeal secret before committing
+        env:
+          APPODEAL_APP_KEY: ${{ secrets.APPODEAL_APP_KEY }}
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import os
+
+          key = os.environ.get("APPODEAL_APP_KEY", "")
+
+          if key:
+              for path in Path("android").rglob("*"):
+                  if not path.is_file():
+                      continue
+
+                  if path.suffix not in {
+                      ".java",
+                      ".xml",
+                      ".gradle",
+                      ".kts",
+                      ".properties"
+                  }:
+                      continue
+
+                  try:
+                      content = path.read_text()
+                  except UnicodeDecodeError:
+                      continue
+
+                  if key in content:
+                      path.write_text(
+                          content.replace(
+                              key,
+                              "APPODEAL_APP_KEY"
+                          )
+                      )
+
+          print("Appodeal secret removed from committed files.")
+          PY
+
       - name: Commit Android project
         run: |
           git config user.name "github-actions[bot]"
@@ -74,6 +357,6 @@ jobs:
           if git diff --cached --quiet; then
             echo "No Android changes to commit."
           else
-            git commit -m "Generate Android project"
+            git commit -m "Generate Android project with Appodeal and icon"
             git push
           fi

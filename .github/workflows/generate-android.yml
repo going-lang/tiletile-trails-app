@@ -58,7 +58,7 @@ jobs:
           set -e
 
           if [ ! -f "app-icon.png" ]; then
-            echo "ERROR: app-icon.png was not found in the repository root."
+            echo "ERROR: app-icon.png was not found."
             exit 1
           fi
 
@@ -68,8 +68,6 @@ jobs:
           cp app-icon.png assets/icon-only.png
 
           npx capacitor-assets generate --android
-
-          echo "Tile Trails Android icon generated successfully."
 
       - name: Configure Appodeal
         env:
@@ -86,58 +84,62 @@ jobs:
           from pathlib import Path
           import os
 
-          # ---------------------------------------------------------
-          # Appodeal Maven repository
-          # ---------------------------------------------------------
+          # Find Gradle settings file
+          settings_candidates = [
+              Path("android/settings.gradle"),
+              Path("android/settings.gradle.kts"),
+          ]
 
-          settings = Path("android/settings.gradle.kts")
+          settings = next(
+              (p for p in settings_candidates if p.exists()),
+              None
+          )
 
-          if not settings.exists():
+          if settings is None:
               raise SystemExit(
-                  "android/settings.gradle.kts was not generated."
+                  "ERROR: Android settings.gradle file was not generated."
               )
 
           text = settings.read_text()
 
           repo = 'maven { url = uri("https://artifactory.appodeal.com/appodeal") }'
 
-          if repo not in text:
-              marker = "repositories {"
-
-              if marker in text:
+          if "artifactory.appodeal.com/appodeal" not in text:
+              if "repositories {" in text:
                   text = text.replace(
-                      marker,
-                      marker + "\n        " + repo,
+                      "repositories {",
+                      "repositories {\n        " + repo,
                       1
                   )
               else:
                   text += (
-                      "\n\n"
-                      "dependencyResolutionManagement {\n"
-                      "    repositories {\n"
-                      "        " + repo + "\n"
-                      "    }\n"
+                      "\n\nrepositories {\n"
+                      "    " + repo + "\n"
                       "}\n"
                   )
 
               settings.write_text(text)
 
-          # ---------------------------------------------------------
-          # Appodeal SDK
-          # ---------------------------------------------------------
+          # Find app Gradle file
+          gradle_candidates = [
+              Path("android/app/build.gradle"),
+              Path("android/app/build.gradle.kts"),
+          ]
 
-          app_gradle = Path("android/app/build.gradle.kts")
+          app_gradle = next(
+              (p for p in gradle_candidates if p.exists()),
+              None
+          )
 
-          if not app_gradle.exists():
+          if app_gradle is None:
               raise SystemExit(
-                  "android/app/build.gradle.kts was not generated."
+                  "ERROR: Android app Gradle file was not generated."
               )
 
           text = app_gradle.read_text()
 
           dependencies = """
               implementation("com.appodeal.ads.sdk:core:4.4.0")
-
               implementation("com.appodeal.ads.sdk.adapters:amazon:12.0.0.0")
               implementation("com.appodeal.ads.sdk.adapters:applovin:13.6.3.0")
               implementation("com.appodeal.ads.sdk.adapters:applovin_max:13.6.3.1")
@@ -168,7 +170,7 @@ jobs:
           if "com.appodeal.ads.sdk:core:4.4.0" not in text:
               if "dependencies {" not in text:
                   raise SystemExit(
-                      "Could not find dependencies block."
+                      "ERROR: Could not find dependencies block."
                   )
 
               text = text.replace(
@@ -179,18 +181,9 @@ jobs:
 
               app_gradle.write_text(text)
 
-          # ---------------------------------------------------------
           # Network security configuration
-          # ---------------------------------------------------------
-
-          res_xml = Path(
-              "android/app/src/main/res/xml"
-          )
-
-          res_xml.mkdir(
-              parents=True,
-              exist_ok=True
-          )
+          res_xml = Path("android/app/src/main/res/xml")
+          res_xml.mkdir(parents=True, exist_ok=True)
 
           network_config = res_xml / "network_security_config.xml"
 
@@ -206,17 +199,14 @@ jobs:
           """
           )
 
-          # ---------------------------------------------------------
           # AndroidManifest.xml
-          # ---------------------------------------------------------
-
           manifest = Path(
               "android/app/src/main/AndroidManifest.xml"
           )
 
           if not manifest.exists():
               raise SystemExit(
-                  "AndroidManifest.xml was not generated."
+                  "ERROR: AndroidManifest.xml was not generated."
               )
 
           manifest_text = manifest.read_text()
@@ -230,18 +220,12 @@ jobs:
 
               manifest.write_text(manifest_text)
 
-          # ---------------------------------------------------------
           # MainActivity.java
-          # ---------------------------------------------------------
-
           activity = Path(
               "android/app/src/main/java/com/tiletrails/game/MainActivity.java"
           )
 
-          activity.parent.mkdir(
-              parents=True,
-              exist_ok=True
-          )
+          activity.parent.mkdir(parents=True, exist_ok=True)
 
           app_key = os.environ["APPODEAL_APP_KEY"]
 
@@ -291,7 +275,7 @@ jobs:
 
           activity.write_text(java_code)
 
-          print("Appodeal configuration completed.")
+          print("Appodeal configuration completed successfully.")
           PY
 
       - name: Build debug APK
@@ -307,56 +291,4 @@ jobs:
           path: android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
 
-      - name: Remove Appodeal secret before committing
-        env:
-          APPODEAL_APP_KEY: ${{ secrets.APPODEAL_APP_KEY }}
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          import os
-
-          key = os.environ.get("APPODEAL_APP_KEY", "")
-
-          if key:
-              for path in Path("android").rglob("*"):
-                  if not path.is_file():
-                      continue
-
-                  if path.suffix not in {
-                      ".java",
-                      ".xml",
-                      ".gradle",
-                      ".kts",
-                      ".properties"
-                  }:
-                      continue
-
-                  try:
-                      content = path.read_text()
-                  except UnicodeDecodeError:
-                      continue
-
-                  if key in content:
-                      path.write_text(
-                          content.replace(
-                              key,
-                              "APPODEAL_APP_KEY"
-                          )
-                      )
-
-          print("Appodeal secret removed from committed files.")
-          PY
-
-      - name: Commit Android project
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
-          git add -A android
-
-          if git diff --cached --quiet; then
-            echo "No Android changes to commit."
-          else
-            git commit -m "Generate Android project with Appodeal and icon"
-            git push
-          fi
+      - name: Remove
